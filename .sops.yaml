@@ -1,0 +1,6 @@
+creation_rules:
+  - path_regex: secrets(\.enc)?\.yaml$
+    key_groups:
+      - age:
+        - &desktop-1 "age1fyc50afgtkrq7xdqr0859ncyrvncxaclvfz83qyp3zq96mg47s5quqmvxt"
+        - &laptop-1 "age14r9xns8kj0kagv4k7nm8hs85v5utkcw32vwqaczwzs8cz8zrgqeqmeakz0"
