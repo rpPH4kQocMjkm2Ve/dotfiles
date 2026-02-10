@@ -1,19 +1,24 @@
-#!/bin/bash
-# Sandboxed Anki via bubblewrap
+#!/usr/bin/env bash
+# Sandboxed mpv via bubblewrap
 set -euo pipefail
 
-mkdir -p "${HOME}/.local/share/Anki2" \
-         "${HOME}/Downloads/anki"
+mkdir -p "$HOME/Pictures/Screenshots" \
+         "$HOME/.local/state/mpv/watch_later" \
+	 "$HOME/.cache/fontconfig"
 
-# ── Bind-mount files passed as arguments (.apkg, .ankiaddon) ────
+# ── Resolve file arguments to real paths ────────────────────────
 FILE_BINDS=()
+ARGS=()
 for arg in "$@"; do
-    [[ "$arg" == -* ]] && continue
-    if [[ -e "$arg" ]]; then
+    if [[ "$arg" != -* && -e "$arg" ]]; then
         _real="$(realpath "$arg")"
         _dir="$(dirname "$_real")"
-        case "$_dir" in /usr/*|/etc/*|/proc/*|/dev/*|/tmp*|/sys/*) continue ;; esac
-        FILE_BINDS+=(--ro-bind "$_dir" "$_dir")
+        case "$_dir" in /usr/*|/etc/*|/proc/*|/dev/*|/tmp*|/sys/*) ;; *)
+            FILE_BINDS+=(--ro-bind "$_dir" "$_dir")
+        ;; esac
+        ARGS+=("$_real")
+    else
+        ARGS+=("$arg")
     fi
 done
 
@@ -34,6 +39,13 @@ _pulse="${XDG_RUNTIME_DIR:-}/pulse"
 [[ -S "$_pw" ]]    && AUDIO+=(--ro-bind "$_pw" "$_pw")
 [[ -d "$_pulse" ]] && AUDIO+=(--ro-bind "$_pulse" "$_pulse")
 
+# ── GPU + nvidia ────────────────────────────────────────────────
+GPU=()
+[[ -d /dev/dri ]] && GPU+=(--dev-bind /dev/dri /dev/dri)
+for dev in /dev/nvidia{0,1,ctl,-modeset}; do
+    [[ -e "$dev" ]] && GPU+=(--dev-bind "$dev" "$dev")
+done
+
 # ── D-Bus ───────────────────────────────────────────────────────
 DBUS=()
 _bus="${DBUS_SESSION_BUS_ADDRESS:-}"
@@ -44,10 +56,6 @@ if [[ "$_bus" == unix:path=* ]]; then
         --setenv DBUS_SESSION_BUS_ADDRESS "$_bus"
     )
 fi
-
-# ── GPU ─────────────────────────────────────────────────────────
-GPU=()
-[[ -d /dev/dri ]] && GPU+=(--dev-bind /dev/dri /dev/dri)
 
 # ── Conditional system binds ────────────────────────────────────
 OPT=()
@@ -76,15 +84,13 @@ exec bwrap \
     --ro-bind /etc /etc \
     \
     --tmpfs "${HOME}" \
-    --bind "${HOME}/.local/share/Anki2" "${HOME}/.local/share/Anki2" \
-    --bind "${HOME}/Downloads/anki" "${HOME}/Downloads/anki" \
-    "${FILE_BINDS[@]}" \
-    --ro-bind-try "${HOME}/.config/qt6ct" "${HOME}/.config/qt6ct" \
-    --ro-bind-try "${HOME}/.config/qt5ct" "${HOME}/.config/qt5ct" \
-    --ro-bind-try "${HOME}/.config/gtk-3.0" "${HOME}/.config/gtk-3.0" \
+    --ro-bind-try "${HOME}/.config/mpv" "${HOME}/.config/mpv" \
     --ro-bind-try "${HOME}/.config/fontconfig" "${HOME}/.config/fontconfig" \
-    --ro-bind-try "${HOME}/.config/Kvantum" "${HOME}/.config/Kvantum" \
     --ro-bind-try "${HOME}/.local/share/fonts" "${HOME}/.local/share/fonts" \
+    --bind "${HOME}/.local/state/mpv" "${HOME}/.local/state/mpv" \
+    --bind "${HOME}/Pictures/Screenshots" "${HOME}/Pictures/Screenshots" \
+    --bind "${HOME}/.cache/fontconfig" "${HOME}/.cache/fontconfig" \
+    "${FILE_BINDS[@]}" \
     \
     --perms 0700 --dir "${XDG_RUNTIME_DIR}" \
     "${WL[@]}" \
@@ -95,12 +101,10 @@ exec bwrap \
     --setenv LANG "${LANG:-en_US.UTF-8}" \
     --setenv PATH "/usr/bin:/bin" \
     --setenv XDG_RUNTIME_DIR "${XDG_RUNTIME_DIR}" \
-    --setenv QT_QPA_PLATFORM wayland \
-    --setenv QT_QPA_PLATFORMTHEME qt6ct \
-    --setenv QTWEBENGINE_DISABLE_SANDBOX 1 \
+    --setenv WAYLAND_DISPLAY "${WAYLAND_DISPLAY:-wayland-1}" \
     \
     --unshare-all \
     --share-net \
     --new-session \
     --die-with-parent \
-    /usr/bin/anki "$@"
+    /usr/bin/mpv "${ARGS[@]}"
